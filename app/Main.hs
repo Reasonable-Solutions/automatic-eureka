@@ -24,9 +24,9 @@ data World = World
   { worldWidth :: Int
   , worldHeight :: Int
   , worldSeed :: Int
-  , worldScale :: Double 
+  , worldScale :: Double
   }
-  
+
 -- a---b
 -- |   |
 -- c---d
@@ -81,14 +81,14 @@ quadAddNoise Quad {..} = do
       (addNoise quadB)
       (addNoise quadC)
       (addNoise quadD)
-    
+
 darkGunMetal :: Double -> Cairo.Render ()
 darkGunMetal = hsva 170 0.30 0.16
 
 
 eggshell :: Double -> Cairo.Render ()
 eggshell = hsva 71 0.13 0.96
- 
+
 renderClosedPath :: [V2 Double] -> Cairo.Render ()
 renderClosedPath (V2 x y:vs) = do
   Cairo.newPath
@@ -120,7 +120,7 @@ fillScreen color opacity = do
 hsva :: Double -> Double -> Double -> (Double -> Cairo.Render ())
 hsva h s v = Cairo.setSourceRGBA channelRed channelGreen channelBlue
  where RGB {..} = hsv h s v
- 
+
 renderSketch :: Generate ()
 renderSketch = do
   fillScreen eggshell 1
@@ -158,7 +158,7 @@ main = do
     scaleHeight = round $ fromIntegral height * scaleAmount
 
   surface <- Cairo.createImageSurface Cairo.FormatARGB32 scaleWidth scaleHeight
-  
+
   let world = World width height seed scaleAmount
 
   void
@@ -171,6 +171,6 @@ main = do
 
   putStrLn "Generating art"
   Cairo.surfaceWriteToPNG surface
-    $ "images/example_sketch/"
+    $ "images/"
     <> show seed <> "-" <> show (round scaleAmount :: Int) <> ".png"
-  Cairo.surfaceWriteToPNG surface "images/example_sketch/latest.png"
+  Cairo.surfaceWriteToPNG surface "images/latest.png"
