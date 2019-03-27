@@ -34,7 +34,6 @@ data Quad = Quad
   { quadA :: V2 Double
   , quadB :: V2 Double
   , quadC :: V2 Double
-  , quadD :: V2 Double
   } deriving (Eq, Ord)
 
 
@@ -55,7 +54,7 @@ genQuadGrid = do
     . nub
     . flip map vectors $ \v ->
     let v' = fromIntegralVector v
-    in Quad v' (v' ^+^ V2 0 1.5) (v' ^+^ V2 1.5 1.5) (v' ^+^ V2 1.5 0)
+    in Quad v' (v' ^+^ V2 1.5 1.5) (v' ^+^ V2 1.5 0)
 
 
 quadAddNoise :: Quad -> Generate Quad
@@ -80,7 +79,6 @@ quadAddNoise Quad {..} = do
       (addNoise quadA)
       (addNoise quadB)
       (addNoise quadC)
-      (addNoise quadD)
 
 darkGunMetal :: Double -> Cairo.Render ()
 darkGunMetal = hsva 170 0.30 0.16
@@ -98,7 +96,7 @@ renderClosedPath (V2 x y:vs) = do
 renderClosedPath [] = pure ()
 
 renderQuad :: Quad -> Cairo.Render ()
-renderQuad Quad {..} = renderClosedPath [quadA, quadB, quadC, quadD]
+renderQuad Quad {..} = renderClosedPath [quadA, quadB, quadC]
 
 
 -- | Lift a Cairo into a generate action
