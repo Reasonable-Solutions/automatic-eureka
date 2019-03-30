@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeApplications #-}
 
 module Main where
+import Debug.Trace
 import Control.Arrow
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Monad.Random as Random
@@ -9,7 +10,7 @@ import Control.Monad.Reader
 import Data.Colour.RGBSpace
 import Data.Colour.RGBSpace.HSV
 import Data.Foldable (for_)
-import Data.List (nub)
+import Data.List (nub, nubBy)
 import Data.Monoid ((<>))
 import Data.Time.Clock.POSIX
 import qualified Graphics.Rendering.Cairo as Cairo
@@ -17,6 +18,7 @@ import Linear.V2
 import Linear.Vector as V
 import qualified Numeric.Noise.Perlin as P
 import Text.Printf
+import Data.Function (on)
 
 import Lib
 
@@ -27,38 +29,90 @@ data World = World
   , worldScale :: Double
   }
 
+backgroundColor :: Double -> Cairo.Render ()
+backgroundColor = hsva 71 0.13 0.96
+
+shapeColor1 :: Double -> Cairo.Render ()
+shapeColor1 = hsva 81 0.25 0.94
+
+shapeColor2 :: Double -> Cairo.Render ()
+shapeColor2 = hsva 11 0.40 0.92
+
+shapeColor3 :: Double -> Cairo.Render ()
+shapeColor3 = hsva 355 0.68 0.84
+
+shapeColor4:: Double -> Cairo.Render ()
+shapeColor4 = hsva 170 0.30 0.16
+
 -- a---b
 -- |   |
--- c---d
-data Quad = Quad
-  { quadA :: V2 Double
-  , quadB :: V2 Double
-  , quadC :: V2 Double
+--   c
+class Shapely a where
+  toList :: a -> [V2 Double]
+
+instance Shapely Shape where
+  toList (Sq Square {..}) = [squareA, squareB, squareC, squareD]
+  toList (Tr Trip {..}) = [tripA, tripB, tripC]
+  toList (Be Bend {..}) = [lA, lB, lC, lD, lE, lF]
+
+
+data Trip = Trip
+  { tripA :: V2 Double
+  , tripB :: V2 Double
+  , tripC :: V2 Double
   } deriving (Eq, Ord)
 
+data Bend = Bend
+  { lA :: V2 Double
+  , lB :: V2 Double
+  , lC :: V2 Double
+  , lD :: V2 Double
+  , lE :: V2 Double
+  , lF :: V2 Double
+  } deriving (Eq, Ord)
 
+data Square = Square
+  { squareA :: V2 Double
+  , squareB :: V2 Double
+  , squareC :: V2 Double
+  , squareD :: V2 Double
+  } deriving (Eq, Ord)
 
+data Shape = Sq Square | Tr Trip | Be Bend deriving (Eq)
+
+data ShapeType = S | T | L
 type Generate a = Random.RandT Random.StdGen (ReaderT World Cairo.Render) a
 
 fromIntegralVector :: V2 Int -> V2 Double
 fromIntegralVector (V2 x y) = V2 (fromIntegral x) (fromIntegral y)
 
-genQuadGrid :: Generate [Quad]
-genQuadGrid = do
+makeShape :: ShapeType -> V2 Double -> Shape
+makeShape S v = Tr $ Trip v (v ^+^ V2 1.5 1.5) (v ^+^ V2 1.5 0)
+makeShape T v = Sq $ Square v (v ^+^ V2 0 1.5) (v ^+^ V2 1.5 1.5) (v ^+^ V2 1.5 0)
+makeShape L v =
+  Be $ Bend
+  v
+  (v ^+^ V2 1.5 0)
+  (v ^+^ V2 1.5 1.5)
+  (v ^+^ V2 0.75 1.5)
+  (v ^+^ V2 0.75 0.75)
+  (v ^+^ V2 0 0.75)
+
+genTripGrid :: Generate [Shape]
+genTripGrid = do
   (w,h) <- getSize @Int
-  vectors <- replicateM 800 $ do
+  shapes <- replicateM 800 $ do
+    shape <- Random.weighted [(S, 1), (T, 1), (L, 1)]
     v <- V2 <$>  Random.getRandomR (3, w `div` 2 - 3)
       <*> Random.getRandomR (3, h `div` 2 -3)
-    pure $ v ^* 2
-  pure
-    . nub
-    . flip map vectors $ \v ->
+    pure (v ^* 2, shape)
+  pure $ flip map (nubBy ((==) `on` fst) shapes) $ \(v,s) ->
     let v' = fromIntegralVector v
-    in Quad v' (v' ^+^ V2 1.5 1.5) (v' ^+^ V2 1.5 0)
+    in makeShape s v'
 
 
-quadAddNoise :: Quad -> Generate Quad
-quadAddNoise Quad {..} = do
+shapeAddNoise :: Shape -> Generate [V2 Double]
+shapeAddNoise shape = do
   perlinSeed <- fromIntegral <$> asks worldSeed
 
   let
@@ -75,17 +129,10 @@ quadAddNoise Quad {..} = do
       in
         v ^+^ V2 (noise / 100) (noise / 8)
 
-  pure $ Quad
-      (addNoise quadA)
-      (addNoise quadB)
-      (addNoise quadC)
-
-darkGunMetal :: Double -> Cairo.Render ()
-darkGunMetal = hsva 170 0.30 0.16
-
-
-eggshell :: Double -> Cairo.Render ()
-eggshell = hsva 71 0.13 0.96
+  pure $ case shape of
+    Sq sh -> addNoise <$> (toList shape)
+    Tr sh -> addNoise <$> (toList shape)
+    Be sh -> addNoise <$> (toList shape)
 
 renderClosedPath :: [V2 Double] -> Cairo.Render ()
 renderClosedPath (V2 x y:vs) = do
@@ -95,9 +142,8 @@ renderClosedPath (V2 x y:vs) = do
   Cairo.closePath
 renderClosedPath [] = pure ()
 
-renderQuad :: Quad -> Cairo.Render ()
-renderQuad Quad {..} = renderClosedPath [quadA, quadB, quadC]
-
+renderShape :: [V2 Double] -> Cairo.Render ()
+renderShape = renderClosedPath
 
 -- | Lift a Cairo into a generate action
 cairo :: Cairo.Render a -> Generate a
@@ -117,31 +163,22 @@ fillScreen color opacity = do
 
 hsva :: Double -> Double -> Double -> (Double -> Cairo.Render ())
 hsva h s v = Cairo.setSourceRGBA channelRed channelGreen channelBlue
- where RGB {..} = hsv h s v
+ where RGB channelRed channelGreen channelBlue = hsv h s v
 
 renderSketch :: Generate ()
 renderSketch = do
-  fillScreen eggshell 1
+  fillScreen backgroundColor 1
   cairo $ Cairo.setLineWidth 0.15
-  quads <- genQuadGrid
-  noisyQuads <- traverse quadAddNoise quads
+  trips <- genTripGrid
+  noisyTrips <- traverse shapeAddNoise trips
 
-  for_ noisyQuads $ \quad -> do
+  for_ noisyTrips $ \trip -> do
     strokeOrFill <- Random.weighted [(Cairo.fill, 0.5), (Cairo.stroke, 0.5)]
-    color <- Random.uniform [teaGreen, vividTangerine, englishVermillion, darkGunMetal]
+    color <- Random.uniform [shapeColor1, shapeColor2, shapeColor3, shapeColor4]
 
     cairo $ do
-     renderQuad $ quad
+     renderShape trip
      color 1 *> strokeOrFill
-
-teaGreen :: Double -> Cairo.Render ()
-teaGreen = hsva 81 0.25 0.94
-
-vividTangerine :: Double -> Cairo.Render ()
-vividTangerine = hsva 11 0.40 0.92
-
-englishVermillion :: Double -> Cairo.Render ()
-englishVermillion = hsva 355 0.68 0.84
 
 main :: IO ()
 main = do
