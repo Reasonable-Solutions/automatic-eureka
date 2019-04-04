@@ -46,7 +46,7 @@ shapeColor3 = hsva  30 0.163 0.816
 
 -- a---b
 -- |   |
--- c---d
+-- d---c
 class Shapely a where
   toList :: a -> [V2 Double]
 
@@ -76,6 +76,7 @@ data Circle = Circle { r :: Double, v :: V2 Double } deriving (Eq, Ord)
 data Shape = Sq Square | Be Bend | Ci Circle deriving (Eq)
 
 data ShapeType = S | L | C
+
 type Generate a = Random.RandT Random.StdGen (ReaderT World Cairo.Render) a
 
 translateM :: V2 Double -> V3 (V3 Double)
@@ -87,15 +88,15 @@ translateM (V2 dx dy) =
 
 rotation r = V3 (V3 (cos r) (-sin r) 0) (V3 (sin r) (cos r) 0) (V3 0 0 1)
 
-rotateShape :: Double -> [V2 Double] -> [V2 Double]
+-- this needs to be over a list of V2 to alist of V2
+rotateShape :: Double -> V2 Double -> V2 Double
 rotateShape rad v@(V2 x y) =
   let
     v' = v
-  in undefined
-  --   (\((V3 x y _)) -> [(V2 x y)])
-  -- $ translateM (v')
-  -- !*! rotation rad
-  -- !*! translateM (negated $ v) !* (V3 x y 1)
+  in  (\((V3 x y _)) -> [(V2 x y)])
+  $ translateM v'
+  !*! rotation rad
+  !*! translateM (negated v') !* (V3 x y 1)
 
 -- >>> rotateShape (pi) (V2 1.5 1.5)
 -- V2 3.0 3.0
@@ -148,7 +149,7 @@ shapeAddNoise shape = do
 
   pure $ case shape of
     Sq sh -> addNoise <$> toList shape
-    Be sh -> rotateShape (0.5) . addNoise <$> toList shape
+    Be sh -> addNoise <$> (toList shape)
     Ci sh -> addNoise <$> toList shape
 
 renderClosedPath :: [V2 Double] -> Cairo.Render ()
